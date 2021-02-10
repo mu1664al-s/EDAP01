@@ -1,20 +1,11 @@
-import random
-from abc import ABC, abstractmethod
-from collections import deque
 from enum import Enum, unique
-from operator import itemgetter
-from typing import Tuple, NamedTuple, Hashable, Optional
-
+from typing import Tuple, NamedTuple, Optional
 import gym
 import numpy as np
 import os
-
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
-from gym import error
-from gym import spaces
-
-from render import render_board
+from gym_connect_four.envs.render import render_board
 
 
 @unique
@@ -77,8 +68,9 @@ class ConnectFourEnv(gym.Env):
                 return ConnectFourEnv.DRAW_REWARD
             else:
                 return \
-                {ResultType.WIN1.value: ConnectFourEnv.WIN_REWARD, ResultType.WIN2.value: ConnectFourEnv.LOSS_REWARD}[
-                    self.res_type.value * player]
+                    {ResultType.WIN1.value: ConnectFourEnv.WIN_REWARD,
+                     ResultType.WIN2.value: ConnectFourEnv.LOSS_REWARD}[
+                        self.res_type.value * player]
 
         def is_done(self):
             return self.res_type != ResultType.NONE
@@ -88,11 +80,11 @@ class ConnectFourEnv(gym.Env):
 
         self.board_shape = board_shape
 
-        self.observation_space = spaces.Box(low=-1,
-                                            high=1,
-                                            shape=board_shape,
-                                            dtype=int)
-        self.action_space = spaces.Discrete(board_shape[1])
+        self.observation_space = gym.spaces.Box(low=-1,
+                                                high=1,
+                                                shape=board_shape,
+                                                dtype=int)
+        self.action_space = gym.spaces.Discrete(board_shape[1])
 
         self.__current_player = 1
         self.__board = np.zeros(self.board_shape, dtype=int)
@@ -185,7 +177,7 @@ class ConnectFourEnv(gym.Env):
 
             pygame.display.update()
         else:
-            raise error.UnsupportedMode()
+            raise gym.error.UnsupportedMode()
 
     def close(self) -> None:
         pygame.quit()
