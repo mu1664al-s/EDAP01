@@ -2,5 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/edap01" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/logistic_regression" vcs="Git" />
   </component>
 </project>

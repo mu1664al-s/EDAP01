@@ -1,5 +1,4 @@
 import time
-from functools import reduce
 
 import gym
 import random
@@ -43,17 +42,23 @@ use your own algorithm for selecting actions too
 """
 
 
+player_mode = False
+
+
 def opponents_move(env):
     env.change_player()  # change to opponent
-    avmoves = env.available_moves()
-    if not avmoves:
-        env.change_player()  # change back to student before returning
-        return -1
+    if not player_mode:
+        avmoves = env.available_moves()
+        if not avmoves:
+            env.change_player()  # change back to student before returning
+            return -1
 
-    # TODO: Optional? change this to select actions with your policy too
-    # that way you get way more interesting games, and you can see if starting
-    # is enough to guarantee a win
-    action = random.choice(list(avmoves))
+        # TODO: Optional? change this to select actions with your policy too
+        # that way you get way more interesting games, and you can see if starting
+        # is enough to guarantee a win
+        action = random.choice(list(avmoves))
+    else:
+        action = int(input("Move: "))
 
     state, reward, done, _ = env.step(action)
     if done:
@@ -70,6 +75,12 @@ _eval_table = np.array([[3, 4, 5, 7, 5, 4, 3],
                         [4, 6, 8, 10, 8, 6, 4],
                         [3, 4, 5, 7, 5, 4, 3]])
 
+_three_line = np.array([0, 1, 1, 1, 0])
+
+_two_line = np.array([[0, 1, 1, 0, 0],
+                      [0, 1, 0, 1, 0],
+                      [0, 0, 1, 1, 0]])
+
 
 def available_moves(state):
     _avmoves = []
@@ -82,107 +93,149 @@ def available_moves(state):
     return _avmoves
 
 
-def _score(state, marker):
-    # Test rows
-    node_score = 0
-    three = 10
-    two = 3
-    for i in range(6):
-        for j in range(7 - 3):
+def compare_to_arrays(array, arrays):
+    for _array in arrays:
+        if np.array_equal(_array, array):
+            return True
+    return False
+
+
+def filled_below(bellow_sub_array):
+    return np.count_nonzero(bellow_sub_array == 0) == 0
+
+
+def check_four(win, value):
+    marker = -1 if value < 0 else 1
+    if abs(value) == 4:
+        return win * marker
+    return 0
+
+
+def check_five(sub_array, _filled_bellow, three, two):
+    value = 0
+    marker = -1 if sum(sub_array) < 0 else 1
+    if _filled_bellow and np.array_equal(sub_array, np.multiply(_three_line, marker)):
+        value = three * marker
+    if _filled_bellow and compare_to_arrays(sub_array, np.multiply(_two_line, marker)):
+        value = two * marker
+    return value
+
+
+def check_straight_line(state, win, three, two):
+    line_score = 0
+    rows, columns = state.shape
+    for i in range(rows):
+        for j in range(columns - 3):
             value = state[i][j:j + 4].sum()
-            if value == 4 * marker:
-                node_score += 1000000 * marker
-            if value == 3 * marker:
-                node_score += three * marker
-            if value == 2 * marker:
-                node_score += two * marker
+            four_value = check_four(win, value)
+            if four_value < 0:
+                return four_value
+            line_score += four_value
+            if rows == 6 and j + 5 < columns:     # if checking for rows
+                sub_array = state[i][j:j + 5]
+                _filled_bellow = True
+                if i + 1 < rows:
+                    _filled_bellow = filled_below(state[i + 1][j:j + 5])
+                line_score += check_five(sub_array, _filled_bellow, three, two)
+    return line_score
+
+
+def check_diagonal_line(state, win, three, two):
+    line_score = 0
+    rows, columns = state.shape
+    for i in range(rows - 3):
+        for j in range(columns - 3):
+            value = 0
+            sub_array = []
+            for k in range(4):
+                value += state[i + k][j + k]
+                sub_array.append(state[i + k][j + k])
+            #   Check 4 in row
+            four_value = check_four(win, value)
+            if four_value < 0:
+                return four_value
+            line_score += four_value
+            # Check the rest
+            if i <= 1 and j <= 2:
+                sub_array.append(state[i + 4][j + 4])
+                _filled_bellow = True
+                if i + 1 <= 2:
+                    bellow_array = []
+                    for k in range(4):
+                        bellow_array.append(state[i + 1 + k][j + k])
+                    if i + 1 <= 1:
+                        bellow_array.append(state[i + 1 + 4][j + 4])
+                    _filled_bellow = filled_below(bellow_array)
+                line_score += check_five(sub_array, _filled_bellow, three, two)
+    return line_score
+
+
+def _score(state):
+    node_score = 0
+    three = 100000
+    two = 10000
+    win = 1000000
+    # Test rows
+    node_score += check_straight_line(state, win, three, two)
 
     # Test columns on transpose array
     reversed_board = np.matrix.transpose(state)
-    for i in range(7):
-        for j in range(6 - 3):
-            value = reversed_board[i][j:j + 4].sum()
-            if value == 4 * marker:
-                node_score += 1000000 * marker
-            if value == 3 * marker:
-                node_score += three * marker
-            if value == 2 * marker:
-                node_score += two * marker
+    node_score += check_straight_line(reversed_board, win, three, two)
 
     # Test diagonal
-    for i in range(6 - 3):
-        for j in range(7 - 3):
-            value = 0
-            for k in range(4):
-                value += state[i + k][j + k]
-                if value == 4 * marker:
-                    node_score += 1000000 * marker
-                if value == 3 * marker:
-                    node_score += three * marker
-                if value == 2 * marker:
-                    node_score += two * marker
+    check_diagonal_line(state, win, three, two)
 
     reversed_board = np.fliplr(state)
     # Test reverse diagonal
-    for i in range(6 - 3):
-        for j in range(7 - 3):
-            value = 0
-            for k in range(4):
-                value += reversed_board[i + k][j + k]
-                if value == 4 * marker:
-                    node_score += 1000000 * marker
-                if value == 3 * marker:
-                    node_score += three * marker
-                if value == 2 * marker:
-                    node_score += two * marker
+    check_diagonal_line(reversed_board, win, three, two)
 
     return node_score
 
 
 def score(state):
-    value = 0
-    for marker in [1, -1]:
-        value += _score(state, marker)
-
-    value += 138 + np.multiply(_eval_table, state).sum()
-    return value
+    return _score(state) + 138 + np.multiply(_eval_table, state).sum()
 
 
 def alhabeta(node, depth, alpha, beta, maximizing_player):
     _move = 3
+    _alpha = alpha
+    _beta = beta
     if depth == 0:
         return score(node), _move
     if maximizing_player:
-        value = -np.inf
+        value = -1000000000
         for move in available_moves(node):
             r, c = move
             node[r][c] = 1  # make move
             child_score = np.maximum(value, alhabeta(node, depth - 1, alpha, beta, False)[0])
             node[r][c] = 0  # reverse move (more efficient then copying the matrix)
-            alpha = np.maximum(alpha, child_score)
+            _alpha = np.maximum(_alpha, child_score)
             if value < child_score:
                 value = child_score
                 _move = c
-            if alpha >= beta:
+            if _alpha >= _beta:
                 break  # beta cutoff
         return value, _move
     else:
-        value = np.inf
+        value = 1000000000
         for move in available_moves(node):
             r, c = move
             node[r][c] = -1  # make move
-            child_score = np.minimum(value, alhabeta(node, depth - 1, alpha, beta, True)[0])
+            value = np.minimum(value, alhabeta(node, depth - 1, alpha, beta, True)[0])
             node[r][c] = 0  # reverse move (more efficient then copying the matrix)
-            beta = np.minimum(beta, child_score)
-            if value > child_score:
+            _beta = np.minimum(_beta, value)
+            """if value > child_score:
                 value = child_score
-                _move = c
-            if beta <= alpha:
+                _move = c"""
+            if _beta <= _alpha:
+                # print("value: ", value, "move: ", c, "alpha: ", alpha, "beta: ", beta)
                 break  # alpha cutoff
         return value, _move
 
 
 longest_move = 0
+sum_moves = 0
+num_moves = 0
 
 
 def student_move(state):
@@ -193,19 +246,22 @@ def student_move(state):
    The function should return a move from 0-6
    """
     # print(state)
-    global longest_move
+    global longest_move, sum_moves, num_moves
     start_time = time.time()
-    value, move = alhabeta(state, 5, -np.inf, np.inf, True)
+    value, move = alhabeta(state, 4, -500000, 500000, True)
     print("move", move, "score", value)
     print("____________________________________________________________________________________________________")
-    longest_move = np.maximum(longest_move, time.time() - start_time)
-    print("longest move time in seconds", longest_move)
+    move_time = time.time() - start_time
+    sum_moves += move_time
+    num_moves += 1
+    longest_move = np.maximum(longest_move, move_time)
+    print("longest move time in seconds: ", longest_move, "mean move time in seconds: ", sum_moves / num_moves)
     return move
 
 
-lose = 0
-win = 0
-draw = 0
+_lose = 0
+_win = 0
+_draw = 0
 
 
 def play_game(vs_server=False):
@@ -219,7 +275,7 @@ def play_game(vs_server=False):
    error = -10 (you get this if you try to play in a full column)
    Currently the player always makes the first move
    """
-    global win, lose, draw
+    global _win, _lose, _draw
 
     # default state
     state = np.zeros((6, 7), dtype=int)
@@ -255,6 +311,7 @@ def play_game(vs_server=False):
 
         # make both student and bot/server moves
         if vs_server:
+            print("playing against server")
             # Select your move
             stmove = student_move(state)  # TODO: change input here
 
@@ -276,6 +333,10 @@ def play_game(vs_server=False):
                     print("You tried to make an illegal move! Games ends.")
                     break
                 state, result, done, _ = env.step(stmove)
+                if player_mode:
+                    # Print current game state
+                    print(state)
+                    print()
 
             student_gets_move = True  # student only skips move first turn if bot starts
 
@@ -284,6 +345,10 @@ def play_game(vs_server=False):
             # select and make a move for the opponent, returned reward from students view
             if not done:
                 state, result, done = opponents_move(env)
+                if player_mode:
+                    # Print current game state
+                    print(state)
+                    print()
 
         # Check if the game is over
         if result != 0:
@@ -292,13 +357,13 @@ def play_game(vs_server=False):
                 print("Game over. ", end="")
             if result == 1:
                 print("You won!")
-                win += 1
+                _win += 1
             elif result == 0.5:
                 print("It's a draw!")
-                draw += 1
+                _draw += 1
             elif result == -1:
                 print("You lost!")
-                lose += 1
+                _lose += 1
             elif result == -10:
                 print("You made an illegal move and have lost!")
             else:
@@ -308,15 +373,18 @@ def play_game(vs_server=False):
         else:
             print("Current state (1 are student discs, -1 are servers, 0 is empty): ")
 
-        # Print current game state
-        print(state)
-        print()
+        if not player_mode:
+            # Print current game state
+            print(state)
+            print()
 
 
 def main():
-    while win < 21:
+    while _win < 1000:
         play_game(vs_server=True)
-        print("win", win, "lose", lose, "draw", draw)
+        print("win", _win, "lose", _lose, "draw", _draw)
+        if _lose > 0:
+            break
     # TODO: Change vs_server to True when you are ready to play against the server
     # the results of your games there will be logged
 
